@@ -1,0 +1,101 @@
+name: Azure_Function_Release_Pipeline
+
+trigger: none
+
+resources:
+- repo: self
+
+stages:
+- stage: Test
+  displayName: Test Environment
+  variables:
+  - group: tf-dev
+  jobs:
+  - deployment: Test_Deployment_Job
+    displayName: Deploy to Test Environment
+    environment: 'infrastructure-dev'
+    pool:
+      vmImage: ubuntu-latest
+    strategy:
+      runOnce:
+        deploy:
+           steps:
+            - task: TerraformInstaller@0
+              displayName: 'Terraform install latest'
+              inputs:
+                terraformVersion: 'latest'
+            - task: TerraformCLI@0
+              displayName: 'Terraform init'
+              inputs:
+                command: 'init'
+                workingDirectory: '$(System.DefaultWorkingDirectory)/infrastructure'
+                backendType: 'azurerm'
+                backendServiceArm: $(SCN)                                 # defined in tf-dev variable group
+                backendAzureRmSubscriptionId: $(BACKENDSUBSCRIPTIONID)    # defined in tf-dev variable group
+                backendAzureRmResourceGroupName: $(BACKENDRG)             # defined in tf-dev variable group
+                backendAzureRmStorageAccountName: $(BACKENDSA)            # defined in tf-dev variable group
+                backendAzureRmContainerName: $(BACKENDSACONTAINER)        # defined in tf-dev variable group
+                backendAzureRmKey: ($BACKENDSTATEFILE)                    # defined in tf-dev variable group
+
+          
+            - task: TerraformCLI@0
+              displayName: 'terraform plan'
+              inputs:
+                command: plan
+                environmentServiceName: 'sc4assessment'
+                commandOptions: '-var-file=dev.tfvars'
+                workingDirectory: infrastructure
+
+            - task: TerraformCLI@0
+              displayName: 'terraform apply'
+              inputs:
+                command: apply
+                commandOptions: '-var-file=dev.tfvars'
+                environmentServiceName: 'sc4assessment'
+                workingDirectory: infrastructure
+
+- stage: Production
+  displayName: Production Environment
+  condition: succeeded()
+  variables:
+  - group: tf-prod
+  jobs:
+  - deployment: Prod_Deployment_Job
+    displayName: Deploy to Production Environment
+    environment: 'infrastructure-production'                      # defined environment with approval gate
+    pool:
+      vmImage: ubuntu-latest
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+            - task: TerraformInstaller@0
+              displayName: 'Terraform install latest'
+              inputs:
+                terraformVersion: 'latest'
+            - task: TerraformCLI@0
+              displayName: 'Terraform init'
+              inputs:
+                command: 'init'
+                workingDirectory: '$(System.DefaultWorkingDirectory)/infrastructure'
+                backendType: 'azurerm'
+                backendServiceArm: $(SCN)                                 # defined in tf-prod variable group
+                backendAzureRmSubscriptionId: $(BACKENDSUBSCRIPTIONID)    # defined in tf-prod variable group
+                backendAzureRmResourceGroupName: $(BACKENDRG)             # defined in tf-prod variable group
+                backendAzureRmStorageAccountName: $(BACKENDSA)            # defined in tf-prod variable group
+                backendAzureRmContainerName: $(BACKENDSACONTAINER)        # defined in tf-prod variable group
+                backendAzureRmKey: ($BACKENDSTATEFILE)                    # defined in tf-prod variable group
+          
+            - task: TerraformCLI@0
+              displayName: 'terraform plan'
+              inputs:
+                command: plan
+                commandOptions: '-var-file=prod.tfvars'
+                workingDirectory: infrastructure
+
+            - task: TerraformCLI@0
+              displayName: 'terraform apply'
+              inputs:
+                command: apply
+                commandOptions: '-var-file=prod.tfvars'
+                workingDirectory: infrastructure
